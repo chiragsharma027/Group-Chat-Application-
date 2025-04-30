@@ -1,0 +1,170 @@
+Here's a basic structure for a Group Chat Application using the MERN stack. This example will focus on the core functionality.
+
+## Backend (Node.js, Express.js, MongoDB)
+### Dependencies
+- `express`
+- `mongodb`
+- `mongoose`
+- `socket.io`
+- `jsonwebtoken` (for authentication)
+
+### Server Code (server.js)
+```
+const express = require('express');
+const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http);
+const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/group-chat', { useNewUrlParser: true, useUnifiedTopology: true });
+
+// Define schema and models
+const User = mongoose.model('User', {
+  username: String,
+  password: String
+});
+
+const Message = mongoose.model('Message', {
+  text: String,
+  userId: String,
+  groupId: String
+});
+
+const Group = mongoose.model('Group', {
+  name: String,
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+});
+
+// Authentication middleware
+function authenticate(req, res, next) {
+  const token = req.header('Authorization');
+  if (!token) return res.status(401).send('Access denied');
+  try {
+    const decoded = jwt.verify(token, 'secretkey');
+    req.user = decoded;
+    next();
+  } catch (ex) {
+    res.status(400).send('Invalid token');
+  }
+}
+
+// API endpoints
+app.post('/register', async (req, res) => {
+  const user = new User(req.body);
+  await user.save();
+  res.send(user);
+});
+
+app.post('/login', async (req, res) => {
+  const user = await User.findOne({ username: req.body.username });
+  if (!user || user.password !== req.body.password) {
+    return res.status(400).send('Invalid credentials');
+  }
+  const token = jwt.sign({ _id: user._id }, 'secretkey');
+  res.send(token);
+});
+
+app.post('/groups', authenticate, async (req, res) => {
+  const group = new Group(req.body);
+  await group.save();
+  res.send(group);
+});
+
+app.get('/groups', authenticate, async (req, res) => {
+  const groups = await Group.find().populate('members');
+  res.send(groups);
+});
+
+app.post('/messages', authenticate, async (req, res) => {
+  const message = new Message(req.body);
+  await message.save();
+  io.emit('newMessage', message);
+  res.send(message);
+});
+
+// Socket.io connection
+io.on('connection', (socket) => {
+  console.log('Client connected');
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
+
+http.listen(3000, () => {
+  console.log('Server listening on port 3000');
+});
+```
+
+## Frontend (React.js)
+### Dependencies
+- `react`
+- `react-dom`
+- `axios` (for API requests)
+- `socket.io-client`
+
+### Client Code (App.js)
+```
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:3000');
+
+function App() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [groups, setGroups] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+
+  useEffect(() => {
+    axios.get('http://localhost:3000/groups')
+      .then(response => {
+        setGroups(response.data);
+      })
+      .catch(error => {
+        console.error(error);
+      });
+
+    socket.on('newMessage', (message) => {
+      setMessages((prevMessages) => [...prevMessages, message]);
+    });
+  }, []);
+
+  const handleRegister = () => {
+    axios.post('http://localhost:3000/register', { username, password })
+      .then(response => {
+        console.log(response.data);
+      })
+      .catch(error => {
+        console.error(error);
+      });
+  };
+
+  const handleLogin = () => {
+    axios.post('http://localhost:3000/login', { username, password })
+      .then(response => {
+        console.log(response.data);
+      })
+      .catch(error => {
+        console.error(error);
+      });
+  };
+
+  const handleSendMessage = () => {
+    axios.post('http://localhost:3000/messages', { text: newMessage })
+      .then(response => {
+        console.log(response.data);
+        setNewMessage('');
+      })
+      .catch(error => {
+        console.error(error);
+      });
+  };
+
+  return (
+    <div>
+      <h1>Group Chat App</h1>
+``` ‎<This message was edited>
